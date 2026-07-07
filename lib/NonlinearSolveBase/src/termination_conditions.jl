@@ -282,6 +282,10 @@ function check_convergence(mode::AbsNormModes, duₙ, _, __, abstol, ___)
     return Utils.apply_norm(mode.internalnorm, duₙ) ≤ abstol
 end
 
+# Constant `false` so the caller's early-return branch is dead-code-eliminated —
+# the point of `NoTermination` is a branchless fixed-iteration loop (GPU kernels).
+check_convergence(::NoTermination, args...) = false
+
 # High-Level API with defaults.
 ## This is mostly for internal usage in NonlinearSolve and SimpleNonlinearSolve
 function default_termination_mode(

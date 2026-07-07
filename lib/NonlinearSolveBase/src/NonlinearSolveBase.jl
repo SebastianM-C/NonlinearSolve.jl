@@ -109,7 +109,8 @@ export TraceMinimal, TraceWithJacobianConditionNumber, TraceAll
 export RelTerminationMode, AbsTerminationMode,
     NormTerminationMode, RelNormTerminationMode, AbsNormTerminationMode,
     RelNormSafeTerminationMode, AbsNormSafeTerminationMode,
-    RelNormSafeBestTerminationMode, AbsNormSafeBestTerminationMode
+    RelNormSafeBestTerminationMode, AbsNormSafeBestTerminationMode,
+    NoTermination
 
 export DescentResult, SteepestDescent, NewtonDescent, DampedNewtonDescent, Dogleg,
     GeodesicAcceleration

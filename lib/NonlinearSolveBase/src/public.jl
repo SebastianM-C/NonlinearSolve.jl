@@ -86,6 +86,24 @@ for name in (:Norm, :RelNorm, :AbsNorm)
     end
 end
 
+"""
+    NoTermination <: AbstractNonlinearTerminationMode
+
+Never terminates early: the solver runs for exactly `maxiters` iterations and returns
+the final iterate with `ReturnCode.Success` (exhausting the budget is the expected
+outcome under this mode, not a failure).
+
+Intended for branchless fixed-iteration solves, e.g. inside GPU kernels where a
+data-dependent early exit causes warp divergence: the per-iteration convergence check
+dispatches to a constant `false`, so the compiler can eliminate the early-return branch
+entirely and every lane runs the same instruction stream.
+
+Pair it with a warm start (a good `u0`) and a `maxiters` chosen from the problem's
+known convergence behaviour, and validate the accuracy offline — under this mode the
+solver reports no convergence information.
+"""
+struct NoTermination <: AbstractNonlinearTerminationMode end
+
 for norm_type in (:RelNorm, :AbsNorm), safety in (:Safe, :SafeBest)
 
     struct_name = Symbol(norm_type, safety, :TerminationMode)

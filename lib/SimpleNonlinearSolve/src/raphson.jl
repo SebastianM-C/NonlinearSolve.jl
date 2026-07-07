@@ -16,6 +16,16 @@ and static array problems.
   - `autodiff`: determines the backend used for the Jacobian. Defaults to  `nothing` (i.e.
     automatic backend selection). Valid choices include jacobian backends from
     `DifferentiationInterface.jl`.
+
+!!! tip "Fixed-iteration (GPU kernel) mode"
+
+    `solve(prob, SimpleNewtonRaphson(); maxiters = N, termination_condition =
+    NonlinearSolveBase.NoTermination())` runs exactly `N` Newton steps with no
+    per-iteration convergence branch (the check dispatches to a constant `false` and is
+    dead-code-eliminated) and returns the final iterate with `ReturnCode.Success`.
+    Combined with the fused residual+derivative evaluation (one `f` call per iteration
+    on the AD path), this makes warm-started scalar solves inside GPU kernels
+    warp-lockstep and evaluation-minimal.
 """
 @kwdef @concrete struct SimpleNewtonRaphson <: AbstractSimpleNonlinearSolveAlgorithm
     autodiff = nothing
@@ -67,9 +77,14 @@ function SciMLBase.__solve(
         solved, retcode, fx_sol, x_sol = Utils.check_termination(tc_cache, fx, x, xo, prob)
         solved && return SciMLBase.build_solution(prob, alg, x_sol, fx_sol; retcode)
 
-        fx = NLBUtils.evaluate_f!!(prob, fx, x)
-        J = Utils.compute_jacobian!!(J, prob, autodiff, fx_cache, x, jac_cache)
+        # Fused residual+jacobian: one `f` evaluation per iteration on the DI
+        # paths instead of separate value and derivative calls.
+        fx, J = Utils.compute_fx_jac!!(J, fx, prob, autodiff, fx_cache, x, jac_cache)
     end
 
-    return SciMLBase.build_solution(prob, alg, x, fx; retcode = ReturnCode.MaxIters)
+    # Under `NoTermination` running out the iteration budget is the expected
+    # outcome (fixed-iteration mode), not a failure.
+    retcode = tc_cache.mode isa NonlinearSolveBase.NoTermination ?
+        ReturnCode.Success : ReturnCode.MaxIters
+    return SciMLBase.build_solution(prob, alg, x, fx; retcode)
 end

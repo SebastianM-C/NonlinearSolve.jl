@@ -178,6 +178,54 @@ function compute_jacobian!!(J, prob, autodiff, fx, x, ::DINoPreparation)
     return J
 end
 
+# Fused residual + jacobian evaluation: one call yields both `fx` and `J`.
+# For the DI paths this halves the number of `f` evaluations per Newton
+# iteration (a single dual-carrying evaluation instead of separate value and
+# derivative calls) — significant when `f` dominates the iteration cost, e.g.
+# an interpolant evaluation inside a GPU kernel. The analytic path necessarily
+# stays two calls (`f` and `jac` are separate functions in the
+# `NonlinearFunction` API). Returns `(fx, J)`.
+function compute_fx_jac!!(J, fx, prob, autodiff, fx_cache, x::Number, mode::AnalyticJacobian)
+    fx = NLBUtils.evaluate_f!!(prob, fx, x)
+    return fx, compute_jacobian!!(J, prob, autodiff, fx_cache, x, mode)
+end
+function compute_fx_jac!!(J, fx, prob, autodiff, fx_cache, x::Number, extras::DIExtras)
+    return DI.value_and_derivative(prob.f, extras.prep, autodiff, x, Constant(prob.p))
+end
+function compute_fx_jac!!(J, fx, prob, autodiff, fx_cache, x::Number, ::DINoPreparation)
+    return DI.value_and_derivative(prob.f, autodiff, x, Constant(prob.p))
+end
+
+function compute_fx_jac!!(J, fx, prob, autodiff, fx_cache, x, mode::AnalyticJacobian)
+    fx = NLBUtils.evaluate_f!!(prob, fx, x)
+    return fx, compute_jacobian!!(J, prob, autodiff, fx_cache, x, mode)
+end
+function compute_fx_jac!!(J, fx, prob, autodiff, fx_cache, x, extras::DIExtras)
+    if SciMLBase.isinplace(prob.f)
+        J === nothing && return DI.value_and_jacobian(
+            prob.f, fx, extras.prep, autodiff, x, Constant(prob.p)
+        )
+        fx, J = DI.value_and_jacobian!(
+            prob.f, fx, J, extras.prep, autodiff, x, Constant(prob.p)
+        )
+        return fx, J
+    else
+        if J === nothing || !ArrayInterface.can_setindex(J)
+            return DI.value_and_jacobian(prob.f, extras.prep, autodiff, x, Constant(prob.p))
+        end
+        fx, J = DI.value_and_jacobian!(prob.f, J, extras.prep, autodiff, x, Constant(prob.p))
+        return fx, J
+    end
+end
+function compute_fx_jac!!(J, fx, prob, autodiff, fx_cache, x, ::DINoPreparation)
+    # DINoPreparation only occurs out-of-place (see compute_jacobian!!)
+    if J === nothing || !ArrayInterface.can_setindex(J)
+        return DI.value_and_jacobian(prob.f, autodiff, x, Constant(prob.p))
+    end
+    fx, J = DI.value_and_jacobian!(prob.f, J, autodiff, x, Constant(prob.p))
+    return fx, J
+end
+
 function compute_hvvp(prob, autodiff, _, x::Number, dir::Number)
     H = DI.second_derivative(prob.f, autodiff, x, Constant(prob.p))
     return H * dir
